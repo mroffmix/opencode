@@ -1,3 +1,34 @@
+diff --git a/dist/cjs/client/auth.js b/dist/cjs/client/auth.js
+index c2e4fa91d26f5336889f6afa416147db75fc4872..179a6152ab5d354ac7e5275b8cb50d4e9330ede3 100644
+--- a/dist/cjs/client/auth.js
++++ b/dist/cjs/client/auth.js
+@@ -241,12 +241,21 @@ async function authInternal(provider, { serverUrl, authorizationCode, scope, res
+         });
+     }
+     const resource = await selectResourceURL(serverUrl, provider, resourceMetadata);
+-    // Apply scope selection strategy (SEP-835):
+-    // 1. WWW-Authenticate scope (passed via `scope` param)
+-    // 2. PRM scopes_supported
+-    // 3. Client metadata scope (user-configured fallback)
++    // Apply scope selection strategy (SEP-835 + opencode #34034):
++    // Server-advertised resource scopes (WWW-Authenticate, then PRM
++    // scopes_supported) are MERGED with the user-configured
++    // clientMetadata.scope instead of the config scope being a last-resort
++    // fallback. This lets client<->AS scopes like `offline_access` (which a
++    // resource server never advertises) be requested on top of the resource
++    // scopes, so the AS issues a refresh token. Order preserved, deduped.
+     // The resolved scope is used consistently for both DCR and the authorization request.
+-    const resolvedScope = scope || resourceMetadata?.scopes_supported?.join(' ') || provider.clientMetadata.scope;
++    const advertisedScope = scope || resourceMetadata?.scopes_supported?.join(' ');
++    const resolvedScope = [advertisedScope, provider.clientMetadata.scope]
++        .filter(Boolean)
++        .flatMap((s) => s.split(/\s+/))
++        .filter(Boolean)
++        .filter((value, index, all) => all.indexOf(value) === index)
++        .join(' ') || undefined;
+     // Handle client registration if needed
+     let clientInformation = await Promise.resolve(provider.clientInformation());
+     if (!clientInformation) {
 diff --git a/dist/cjs/client/index.d.ts b/dist/cjs/client/index.d.ts
 index 6f567a193626587a2730b5a49293ca5dfd4181ea..5b7c841c000508e389ce617f559f7c2a5126ca9f 100644
 --- a/dist/cjs/client/index.d.ts
@@ -280,6 +311,37 @@ index 3617e787f0ba70447c99501aee7aa67584d89758..4ee4d158391558fdc1f977f5134b7cac
                      this._cleanupTimeout(messageId);
                      reject(error);
                  });
+diff --git a/dist/esm/client/auth.js b/dist/esm/client/auth.js
+index e183040fc2bba22ca1ccc784984f3310854403b7..fefc74a3f405b649639c3d69969349a23a5f3df2 100644
+--- a/dist/esm/client/auth.js
++++ b/dist/esm/client/auth.js
+@@ -216,12 +216,21 @@ async function authInternal(provider, { serverUrl, authorizationCode, scope, res
+         });
+     }
+     const resource = await selectResourceURL(serverUrl, provider, resourceMetadata);
+-    // Apply scope selection strategy (SEP-835):
+-    // 1. WWW-Authenticate scope (passed via `scope` param)
+-    // 2. PRM scopes_supported
+-    // 3. Client metadata scope (user-configured fallback)
++    // Apply scope selection strategy (SEP-835 + opencode #34034):
++    // Server-advertised resource scopes (WWW-Authenticate, then PRM
++    // scopes_supported) are MERGED with the user-configured
++    // clientMetadata.scope instead of the config scope being a last-resort
++    // fallback. This lets client<->AS scopes like `offline_access` (which a
++    // resource server never advertises) be requested on top of the resource
++    // scopes, so the AS issues a refresh token. Order preserved, deduped.
+     // The resolved scope is used consistently for both DCR and the authorization request.
+-    const resolvedScope = scope || resourceMetadata?.scopes_supported?.join(' ') || provider.clientMetadata.scope;
++    const advertisedScope = scope || resourceMetadata?.scopes_supported?.join(' ');
++    const resolvedScope = [advertisedScope, provider.clientMetadata.scope]
++        .filter(Boolean)
++        .flatMap((s) => s.split(/\s+/))
++        .filter(Boolean)
++        .filter((value, index, all) => all.indexOf(value) === index)
++        .join(' ') || undefined;
+     // Handle client registration if needed
+     let clientInformation = await Promise.resolve(provider.clientInformation());
+     if (!clientInformation) {
 diff --git a/dist/esm/client/index.d.ts b/dist/esm/client/index.d.ts
 index 6f567a193626587a2730b5a49293ca5dfd4181ea..5b7c841c000508e389ce617f559f7c2a5126ca9f 100644
 --- a/dist/esm/client/index.d.ts
